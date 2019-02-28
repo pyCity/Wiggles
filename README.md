@@ -29,7 +29,7 @@ From pseudocode.txt:
     - https://dirtycow.ninja/
     - Compile:  g++ -Wall -pedantic -O2 -std=c++11 -pthread -o dcow 40847.cpp -lutil
 
---------Exploits----------
+--------EXPLOITS----------
 - Libssh Authentication Bypass
 - Heartbleed (CVE-2014-0160)
 - Shellshock
