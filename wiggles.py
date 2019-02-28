@@ -120,32 +120,6 @@ def download_file(url, file):
             logger.debug("Download successful: {}".format(f.name))
             return f.name
 
-
-def get_file(host, user, private_key, remote_file, local_dir):
-    """Download a file via SFTP from a remote host, return the file"""
-    logger.debug("SFTPing {} from {}:{}".format(remote_file, user, host))
-    with pysftp.Connection(host, user, private_key) as sftp:
-        with sftp.chdir(local_dir):
-            sftp.get(remote_file)
-            return remote_file
-
-
-def put_file(host, user, private_key, local_file, remote_dir):
-    """Upload a file via SFTP from local host to remote_dir"""
-    with pysftp.Connection(host, user, private_key) as sftp:
-        with sftp.chdir(remote_dir):
-            sftp.put(local_file)
-
-
-def exec_code(host, user, private_key, payload):
-    """Login to a server and execute remote code"""
-    with pysftp.Connection(host, user, private_key) as sftp:
-        if sftp.exists("/etc/.wiggles"):
-            with sftp.cd("/etc/.wiggles"):
-                sftp.execute(payload)
-        else:
-            sftp.mkdir("/etc/.wiggles")
-
 # ----------------------------------------------------------------------------------------------------------------------
 # CLASSES
 
